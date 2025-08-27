@@ -1,0 +1,2 @@
+rootProject.name = "CutCoachApp"
+include(":app")
