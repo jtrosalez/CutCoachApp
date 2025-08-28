@@ -1,61 +1,83 @@
 name: Build Android APK
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: {}
+  push:
+    branches: [ main ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
+      # 1) Pull your repo
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Hard fail early if the Android module isn't present
-      - name: Verify project layout
+      # 2) Quick sanity: show top-level files (helps debug paths)
+      - name: Show repo files (debug)
         run: |
+          echo "PWD=$(pwd)"
           ls -la
-          test -f settings.gradle || (echo "settings.gradle missing at repo root" && exit 1)
-          test -f build.gradle || (echo "build.gradle missing at repo root" && exit 1)
-          test -f app/build.gradle || (echo "app/build.gradle missing" && exit 1)
-          echo "Project layout OK."
 
+      # 3) JDK 17 (required by modern Android Gradle Plugin)
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
+      # 4) Android SDK
       - name: Install Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install SDK components
+      # 5) Install specific SDK components + accept licenses
+      - name: Install Android SDK components & accept licenses
         run: |
-          sdkmanager --install "platforms;android-34" "build-tools;34.0.0" "platform-tools" "cmdline-tools;latest"
+          sdkmanager --install "platform-tools" "cmdline-tools;latest" "platforms;android-34" "build-tools;34.0.0"
           yes | sdkmanager --licenses
 
-      - name: Set up Gradle 8.9
+      # 6) Gradle (hosted) to run tasks if wrapper is missing; still prefer wrapper if present
+      - name: Set up Gradle 8.7
         uses: gradle/actions/setup-gradle@v3
         with:
-          gradle-version: 8.9
+          gradle-version: 8.7
 
-      # Build and always upload logs so we can see failures
-      - name: Build (verbose)
+      # 7) Make gradlew executable if it exists
+      - name: Make gradlew executable (if present)
         run: |
-          set -o pipefail
-          gradle --version | tee gradle-info.txt
-          gradle assembleDebug --stacktrace --info | tee build-log.txt
+          if [ -f ./gradlew ]; then chmod +x ./gradlew; fi
 
-      - name: Upload build logs (always)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: gradle-logs
-          path: |
-            gradle-info.txt
-            build-log.txt
+      # 8) Auto-detect the Android project directory (folder with settings.gradle)
+      - name: Locate Android project dir
+        id: projdir
+        run: |
+          PROJ_DIR="$(dirname "$(find . -type f -name settings.gradle | head -n1)")"
+          if [ -z "$PROJ_DIR" ]; then
+            echo "ERROR: Could not find settings.gradle in the repo." >&2
+            exit 1
+          fi
+          echo "Project directory: $PROJ_DIR"
+          echo "proj_dir=$PROJ_DIR" >> "$GITHUB_OUTPUT"
 
-      - name: Upload APK
+      # 9) Build debug APK (use ./gradlew if available, else fall back to gradle)
+      - name: Build debug APK
+        working-directory: ${{ steps.projdir.outputs.proj_dir }}
+        run: |
+          if [ -f ./gradlew ]; then
+            ./gradlew --version
+            ./gradlew assembleDebug --stacktrace --info
+          else
+            gradle --version
+            gradle assembleDebug --stacktrace --info
+          fi
+
+      # 10) Upload any generated debug APKs
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: CutCoach-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: |
+            **/app/build/outputs/apk/debug/*.apk
+            **/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
