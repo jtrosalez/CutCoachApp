@@ -24,14 +24,19 @@ jobs:
       - name: Accept SDK licenses
         run: yes | sdkmanager --licenses
 
-      - name: Make gradlew executable
-        run: chmod +x ./gradlew
+      # Use hosted Gradle (avoids missing wrapper jar)
+      - name: Set up Gradle 8.7
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: 8.7
 
-      - name: Build with Gradle Wrapper
-        run: ./gradlew assembleDebug --stacktrace
+      # If your Android project is at repo root, keep this.
+      # If it's in a subfolder, add: working-directory: <that-folder>
+      - name: Build debug APK
+        run: gradle assembleDebug --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: CutCoach-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          path: "**/app/build/outputs/apk/debug/*.apk"
