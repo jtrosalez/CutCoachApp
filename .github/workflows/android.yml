@@ -10,14 +10,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Hard fail early if the Android module isn't present
       - name: Verify project layout
         run: |
           ls -la
-          test -f settings.gradle || (echo "settings.gradle missing at repo root" && exit 1)
-          test -f build.gradle || (echo "build.gradle missing at repo root" && exit 1)
+          test -f settings.gradle || (echo "settings.gradle missing" && exit 1)
+          test -f build.gradle || (echo "build.gradle missing" && exit 1)
           test -f app/build.gradle || (echo "app/build.gradle missing" && exit 1)
-          echo "Project layout OK."
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -33,12 +31,11 @@ jobs:
           sdkmanager --install "platforms;android-34" "build-tools;34.0.0" "platform-tools" "cmdline-tools;latest"
           yes | sdkmanager --licenses
 
-      - name: Set up Gradle 8.7
+      - name: Set up Gradle 8.9
         uses: gradle/actions/setup-gradle@v3
         with:
-          gradle-version: 8.7
+          gradle-version: 8.9
 
-      # Build and tee output to files we can download even if the build fails
       - name: Build (verbose)
         run: |
           set -o pipefail
