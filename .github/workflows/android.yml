@@ -2,15 +2,22 @@ name: Build Android APK
 
 on:
   workflow_dispatch:
-  push:
-    branches: [ main ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
+
+      # Hard fail early if the Android module isn't present
+      - name: Verify project layout
+        run: |
+          ls -la
+          test -f settings.gradle || (echo "settings.gradle missing at repo root" && exit 1)
+          test -f build.gradle || (echo "build.gradle missing at repo root" && exit 1)
+          test -f app/build.gradle || (echo "app/build.gradle missing" && exit 1)
+          echo "Project layout OK."
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -21,34 +28,34 @@ jobs:
       - name: Install Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android SDK components
-        run: sdkmanager --install "platforms;android-34" "build-tools;34.0.0" "platform-tools" "cmdline-tools;latest"
-
-      - name: Accept SDK licenses
-        run: yes | sdkmanager --licenses
+      - name: Install SDK components
+        run: |
+          sdkmanager --install "platforms;android-34" "build-tools;34.0.0" "platform-tools" "cmdline-tools;latest"
+          yes | sdkmanager --licenses
 
       - name: Set up Gradle 8.7
         uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: 8.7
 
-      # Find the folder that contains settings.gradle and expose it as an output
-      - name: Locate project dir
-        id: probe
+      # Build and tee output to files we can download even if the build fails
+      - name: Build (verbose)
         run: |
-          PROJ_DIR="$(dirname "$(find . -type f -name settings.gradle | head -n1)")"
-          echo "proj_dir=$PROJ_DIR" >> "$GITHUB_OUTPUT"
-          echo "Found project dir: $PROJ_DIR"
-          test -n "$PROJ_DIR"
+          set -o pipefail
+          gradle --version | tee gradle-info.txt
+          gradle assembleDebug --stacktrace --info | tee build-log.txt
 
-      - name: Build debug APK
-        working-directory: ${{ steps.probe.outputs.proj_dir }}
-        run: |
-          gradle --version
-          gradle assembleDebug --stacktrace --info
+      - name: Upload build logs (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-logs
+          path: |
+            gradle-info.txt
+            build-log.txt
 
-      - name: Upload APK artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: CutCoach-debug-apk
-          path: ${{ steps.probe.outputs.proj_dir }}/app/build/outputs/apk/debug/*.apk
+          path: app/build/outputs/apk/debug/app-debug.apk
