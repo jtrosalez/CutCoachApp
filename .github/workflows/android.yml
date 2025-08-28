@@ -12,12 +12,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Show repo files (debug)
-        run: ls -la
-
-      - name: Locate settings.gradle (debug)
-        run: find . -maxdepth 4 -type f -name "settings.gradle" -print
-
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -38,11 +32,23 @@ jobs:
         with:
           gradle-version: 8.7
 
-      - name: Build debug APK (auto-detect project dir)
-        run: PROJ_DIR="$(dirname "$(find . -type f -name settings.gradle | head -n1)")"; echo "Project dir: $PROJ_DIR"; if [ -z "$PROJ_DIR" ]; then echo "ERROR: settings.gradle not found"; exit 1; fi; cd "$PROJ_DIR"; gradle --version; gradle assembleDebug --stacktrace --info
+      # Find the folder that contains settings.gradle and expose it as an output
+      - name: Locate project dir
+        id: probe
+        run: |
+          PROJ_DIR="$(dirname "$(find . -type f -name settings.gradle | head -n1)")"
+          echo "proj_dir=$PROJ_DIR" >> "$GITHUB_OUTPUT"
+          echo "Found project dir: $PROJ_DIR"
+          test -n "$PROJ_DIR"
+
+      - name: Build debug APK
+        working-directory: ${{ steps.probe.outputs.proj_dir }}
+        run: |
+          gradle --version
+          gradle assembleDebug --stacktrace --info
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: CutCoach-debug-apk
-          path: "**/app/build/outputs/apk/debug/*.apk"
+          path: ${{ steps.probe.outputs.proj_dir }}/app/build/outputs/apk/debug/*.apk
